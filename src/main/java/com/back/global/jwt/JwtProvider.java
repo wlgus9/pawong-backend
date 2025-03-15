@@ -1,20 +1,25 @@
 package com.back.global.jwt;
 
-import com.back.domain.User;
+import com.back.global.exception.CustomException;
+import com.back.global.response.ResponseMessage;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
-import java.time.ZonedDateTime;
 import java.util.Date;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * [JWT 관련 메서드를 제공하는 클래스]
@@ -22,157 +27,107 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Component
 public class JwtProvider {
-    private final Key key; // JWT secret key
-    private final long accessTokenExpTime; // access 토큰 유효기간
-    private final long refreshTokenExpTime; // refresh 토큰 유효기간
-    private final Map<String, String> tokenCache = new ConcurrentHashMap<>(); // 토큰 캐시
+    private static final String AUTH_KEY = "auth";
+    private static final String BEARER_TYPE = "Bearer";
 
-    public JwtProvider(
-            @Value("${jwt.secret_key}") String secretKey,
-            @Value("${jwt.expiration_time.access_token}") long accessTokenExpTime,
-            @Value("${jwt.expiration_time.refresh_token}") long refreshTokenExpTime
-    ) {
+    private final RedisTemplate<String, String> redisTemplate;
+    private final Key secretKey; // JWT secret key
+
+    @Autowired
+    private UserDetailsService userDetailsService;
+
+    @Value("${jwt.expiration_time.access_token}")
+    private long accessTokenExpTime; // access 토큰 유효기간
+
+    @Value("${jwt.expiration_time.refresh_token}")
+    private long refreshTokenExpTime; // refresh 토큰 유효기간
+
+    public JwtProvider(@Value("${jwt.secret_key}") String secretKey, RedisTemplate<String, String> redisTemplate) {
         byte[] keyBytes = Decoders.BASE64.decode(secretKey);
-        this.key = Keys.hmacShaKeyFor(keyBytes);
-        this.accessTokenExpTime = accessTokenExpTime;
-        this.refreshTokenExpTime = refreshTokenExpTime;
+        this.secretKey = Keys.hmacShaKeyFor(keyBytes);
+        this.redisTemplate = redisTemplate;
     }
 
     /**
      * Access Token 생성
-     * @param user
-     * @return Access Token String
      */
-    /* public String createAccessToken(User user) {
-        return createToken(user, accessTokenExpTime);
+    public String createAccessToken(Authentication authentication) {
+        Claims claims = Jwts.claims().setSubject(authentication.getName());
+        Date now = new Date();
+        Date expireDate = new Date(now.getTime() + accessTokenExpTime);
+
+        return Jwts.builder()
+                .setClaims(claims)
+                .setIssuedAt(now)
+                .setExpiration(expireDate)
+                .signWith(secretKey, SignatureAlgorithm.HS256)
+                .compact();
     }
 
-     *//**
-     * Refresh Token 생성
-     * @param user
-     * @return Access Token String
-     *//*
-    public String createRefreshToken(User user) {
-        return createToken(user, refreshTokenExpTime);
-    } */
-
     /**
-     * JWT 생성
-     * @param user
-     * @param expireTime
-     * @return JWT String
+     * Refresh Token 생성
      */
-    /* private String createToken(User user, long expireTime) {
-        String userId = user.getUserId();
-        String existingToken = tokenCache.get(userId);
+    public String createRefreshToken(Authentication authentication) {
+        Claims claims = Jwts.claims().setSubject(authentication.getName());
+        Date now = new Date();
+        Date expireDate = new Date(now.getTime() + refreshTokenExpTime);
 
-        // 기존 토큰이 유효하면 재사용
-        if (existingToken != null && validateToken(existingToken)) {
-            return existingToken;
-        }
-
-        Claims claims = Jwts.claims();
-        claims.put("userId", userId);
-        claims.put("userName", user.getUserName());
-
-        ZonedDateTime now = ZonedDateTime.now();
-        ZonedDateTime tokenValidity = now.plusSeconds(expireTime);
-
-        String token = Jwts.builder()
+        String refreshToken = Jwts.builder()
                 .setClaims(claims)
-                .setIssuedAt(Date.from(now.toInstant()))
-                .setExpiration(Date.from(tokenValidity.toInstant()))
-                .signWith(key, SignatureAlgorithm.HS256)
+                .setIssuedAt(now)
+                .setExpiration(expireDate)
+                .signWith(secretKey, SignatureAlgorithm.HS256)
                 .compact();
 
-        tokenCache.put(userId, token);
+        // redis에 저장
+        redisTemplate.opsForValue().set(
+                authentication.getName(),
+                refreshToken,
+                refreshTokenExpTime,
+                TimeUnit.MILLISECONDS
+        );
 
-        return token;
-    } */
+        return refreshToken;
+    }
 
     /**
-     * HTTP 요청에서 Token 추출
-     * @param request
-     * @return token
+     * 토큰으로부터 클레임을 만들고, 이를 통해 User 객체 생성해 Authentication 객체 반환
      */
-    public String resolveToken(HttpServletRequest request) {
-        String token = request.getHeader("Authorization");
-        if (token != null && token.startsWith("Bearer ")) {
-            return token.substring(7); // "Bearer " 제거
-        }
+    public Authentication getAuthentication(String token) {
+        String userPrincipal = Jwts.parserBuilder()
+                .setSigningKey(secretKey)
+                .build()
+                .parseClaimsJws(token)
+                .getBody()
+                .getSubject();
 
-        if (request.getCookies() != null) {
-            for (Cookie cookie : request.getCookies()) {
-                if ("refresh_token".equals(cookie.getName())) { // 쿠키 이름이 "refresh_token"인 경우
-                    return cookie.getValue();
-                }
-            }
-        }
+        log.info("getAuthentication userPrincipal = {}", userPrincipal);
 
+        UserDetails userDetails = userDetailsService.loadUserByUsername(userPrincipal);
+
+        return new UsernamePasswordAuthenticationToken(userDetails, "", userDetails.getAuthorities());
+    }
+
+    /**
+     * http 헤더에서 bearer 토큰 추출
+     */
+    public String resolveToken(HttpServletRequest req) {
+        String bearerToken = req.getHeader("Authorization");
+        if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
+            return bearerToken.substring(7);
+        }
         return null;
     }
 
     /**
-     * Token에서 userId 추출
-     * @param token
-     * @return userId
+     * Access 토큰을 검증
      */
-    public String getUserId(String token) {
-        return parseClaims(token).get("userId", String.class);
-    }
-
-
-    /**
-     * Request에서 userId 추출
-     * @param request
-     * @return userId
-     */
-    public String getUserId(HttpServletRequest request) {
-        return parseClaims(resolveToken(request)).get("userId", String.class);
-    }
-
-    /**
-     * Request에서 userName 추출
-     * @param request
-     * @return userName
-     */
-    public String getUserName(HttpServletRequest request) {
-        return parseClaims(resolveToken(request)).get("userName", String.class);
-    }
-
-
-    /**
-     * JWT 검증
-     * @param token
-     * @return IsValidate
-     */
-    public boolean validateToken(String token) {
-        try {
-            Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
+    public boolean validateToken(String token){
+        try{
+            Jwts.parserBuilder().setSigningKey(secretKey).build().parseClaimsJws(token).getBody();
             return true;
-        } catch (io.jsonwebtoken.security.SecurityException | MalformedJwtException e) {
-            log.info("Invalid JWT Token", e);
-        } catch (ExpiredJwtException e) {
-            log.info("Expired JWT Token", e);
-        } catch (UnsupportedJwtException e) {
-            log.info("Unsupported JWT Token", e);
-        } catch (IllegalArgumentException e) {
-            log.info("JWT claims string is empty.", e);
-        }
-
-        return false;
-    }
-
-    /**
-     * JWT Claims 추출
-     * @param token
-     * @return JWT Claims
-     */
-    public Claims parseClaims(String token) {
-        try {
-            return Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).getBody();
-        } catch (ExpiredJwtException e) {
-            return e.getClaims();
+        } catch(JwtException e) {
+            throw new CustomException(ResponseMessage.INVALID_TOKEN);
         }
     }
 }
