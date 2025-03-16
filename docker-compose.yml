@@ -1,0 +1,56 @@
+services:
+  db:
+    image: mysql
+    container_name: pawong-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root1@3$
+      MYSQL_USER: gus
+      MYSQL_PASSWORD: 0409
+      MYSQL_DATABASE: pawong
+    ports:
+      - "3307:3306"
+    volumes:
+      - pawong_mysql_data:/var/lib/mysql
+    networks:
+      - pawong-network
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - pawong-network
+
+  app:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: pawong-app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://pawong-mysql:3306/pawong?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: gus
+      SPRING_DATASOURCE_PASSWORD: 0409
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+    ports:
+      - "8080:8080"
+    networks:
+      - pawong-network
+
+volumes:
+  pawong_mysql_data:
+
+networks:
+  pawong-network:
