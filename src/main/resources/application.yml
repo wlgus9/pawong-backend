@@ -1,0 +1,50 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:mysql://pawong-mysql:3306/pawong?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: gus
+    password: 0409
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  data:
+    redis:
+      host: redis
+      port: 6379
+
+springdoc:
+  swagger-ui:
+    path: /
+    groups-order: DESC
+    tags-sorter: alpha
+    operations-sorter: method
+    disable-swagger-default-url: true
+    display-request-duration: true
+    defaultModelsExpandDepth: 2
+    defaultModelExpandDepth: 2
+  api-docs:
+    path: /api-docs
+  show-actuator: true
+  default-consumes-media-type: application/json
+  default-produces-media-type: application/json
+  writer-with-default-pretty-printer: true
+  model-and-view-allowed: true
+  paths-to-match:
+    - /api/**
+  override-with-generic-response: false
+
+jwt:
+  expiration_time:
+    access_token: 900000      # 15? (15 * 60 * 1000 ms)
+    refresh_token: 604800000  # 7? (7 * 24 * 60 * 60 * 1000 ms)
+  secret_key: zk+5IRIt90hfC7C1KwNVtX9TcjY8HT0/fZvmVrHIY+1ESeWbBfPW7HrNnXf+AtTdWg+LdbP4MBt3ued4ulNcjw==
