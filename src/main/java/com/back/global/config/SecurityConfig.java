@@ -6,6 +6,7 @@ import com.back.global.jwt.JwtProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -27,6 +28,7 @@ public class SecurityConfig {
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
     private final CorsFilter corsFilter;
+    private final RedisTemplate<String, String> redisTemplate;
 
 
     @Bean
@@ -65,7 +67,7 @@ public class SecurityConfig {
                     sessionManagement.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
             // JwtFilter를 addFilterBefore로 등록했던 JwtSecurityConfig 클래스를 적용
-            .with(new JwtSecurityConfig(jwtProvider), customizer -> {});
+            .with(new JwtSecurityConfig(jwtProvider, redisTemplate), customizer -> {});
 
         return http.build();
     }
