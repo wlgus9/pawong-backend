@@ -5,8 +5,8 @@ services:
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root1@3$
-      MYSQL_USER: gus
-      MYSQL_PASSWORD: 0409
+#      MYSQL_USER: gus
+#      MYSQL_PASSWORD: 0409
       MYSQL_DATABASE: pawong
     ports:
       - "3307:3306"
@@ -22,7 +22,7 @@ services:
 
   redis:
     image: redis
-    container_name: redis
+    container_name: pawong-redis
     ports:
       - "6379:6379"
     networks:
@@ -40,8 +40,8 @@ services:
         condition: service_started
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://pawong-mysql:3306/pawong?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-      SPRING_DATASOURCE_USERNAME: gus
-      SPRING_DATASOURCE_PASSWORD: 0409
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root1@3$
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: 6379
     ports:

@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 
 import static com.back.global.response.ResponseMessage.*;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MemberService {
@@ -30,13 +31,16 @@ public class MemberService {
     private final AuthenticationManagerBuilder authenticationManagerBuilder;
     private final RedisTemplate<String, String> redisTemplate;
 
+
+    public ResponseDto<Void> duplicateEmailCheck(String email) {
+        boolean isDup = memberRepository.existsByEmail(email);
+
+        return isDup ? ResponseDto.from(SIGNUP_DUPLICATE) : ResponseDto.from(SIGNUP_EMAIL_OK);
+    }
+
     @Transactional
     public ResponseDto<Void> signup(SignupDto signupDto) {
         Member member = Member.signup(signupDto, passwordEncoder);
-
-        if(memberRepository.existsByEmail(member.getEmail())) {
-            throw new CustomException(SIGNUP_DUPLICATE);
-        }
 
         memberRepository.save(member);
 
@@ -45,7 +49,6 @@ public class MemberService {
 
     @Transactional
     public ResponseDto<TokenDto> login(LoginDto loginDto) {
-
         // 1. Login Email/PW 를 기반으로 AuthenticationToken 생성
         UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
                 loginDto.getEmail(), loginDto.getPassword()
@@ -58,10 +61,7 @@ public class MemberService {
                 .authenticate(authenticationToken);
 
         // 3. 인증 정보를 기반으로 토큰 생성
-        TokenDto tokenDto = TokenDto.from(
-                jwtProvider.createAccessToken(authentication),
-                jwtProvider.createRefreshToken(authentication)
-        );
+        TokenDto tokenDto = TokenDto.from(jwtProvider.createToken(authentication));
 
         return ResponseDto.from(LOGIN_SUCCESS, tokenDto);
     }
@@ -70,10 +70,6 @@ public class MemberService {
     public ResponseDto<TokenDto> reissue(TokenDto tokenDto) {
 
         String accessToken = tokenDto.getAccessToken();
-        String refreshToken = tokenDto.getRefreshToken();
-
-        // Refresh Token 검증
-        jwtProvider.validateToken(refreshToken);
 
         // Access Token 에서 Member ID 가져오기
         Authentication authentication = jwtProvider.getAuthentication(accessToken);
@@ -81,16 +77,8 @@ public class MemberService {
         // Redis에서 Member ID 를 기반으로 Refresh Token 값 가져옴
         String redisRefreshToken = redisTemplate.opsForValue().get(authentication.getName());
 
-        // Refresh Token 일치하는지 검사
-        if (!redisRefreshToken.equals(refreshToken)) {
-            throw new CustomException(INVALID_TOKEN);
-        }
-
         // 새로운 토큰 생성
-        TokenDto newTokenDto = TokenDto.from(
-                jwtProvider.createAccessToken(authentication),
-                jwtProvider.createRefreshToken(authentication)
-        );
+        TokenDto newTokenDto = TokenDto.from(jwtProvider.createToken(authentication));
 
         return ResponseDto.from(NEW_TOKEN, newTokenDto);
     }

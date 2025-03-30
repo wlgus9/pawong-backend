@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
@@ -49,37 +50,29 @@ public class JwtProvider {
     }
 
     /**
-     * Access Token 생성
+     * Token 생성
      */
-    public String createAccessToken(Authentication authentication) {
+    public String createToken(Authentication authentication) {
         Claims claims = Jwts.claims().setSubject(authentication.getName());
         Date now = new Date();
-        Date expireDate = new Date(now.getTime() + accessTokenExpTime);
+        Date accessExpireDate = new Date(now.getTime() + accessTokenExpTime);
+        Date refreshExpireDate = new Date(now.getTime() + refreshTokenExpTime);
 
-        return Jwts.builder()
+        String accessToken =  Jwts.builder()
                 .setClaims(claims)
                 .setIssuedAt(now)
-                .setExpiration(expireDate)
+                .setExpiration(accessExpireDate)
                 .signWith(secretKey, SignatureAlgorithm.HS256)
                 .compact();
-    }
-
-    /**
-     * Refresh Token 생성
-     */
-    public String createRefreshToken(Authentication authentication) {
-        Claims claims = Jwts.claims().setSubject(authentication.getName());
-        Date now = new Date();
-        Date expireDate = new Date(now.getTime() + refreshTokenExpTime);
 
         String refreshToken = Jwts.builder()
                 .setClaims(claims)
                 .setIssuedAt(now)
-                .setExpiration(expireDate)
+                .setExpiration(refreshExpireDate)
                 .signWith(secretKey, SignatureAlgorithm.HS256)
                 .compact();
 
-        // redis에 저장
+        // refresh token redis에 저장
         redisTemplate.opsForValue().set(
                 authentication.getName(),
                 refreshToken,
@@ -87,7 +80,7 @@ public class JwtProvider {
                 TimeUnit.MILLISECONDS
         );
 
-        return refreshToken;
+        return accessToken;
     }
 
     /**
@@ -127,7 +120,33 @@ public class JwtProvider {
             Jwts.parserBuilder().setSigningKey(secretKey).build().parseClaimsJws(token).getBody();
             return true;
         } catch(JwtException e) {
-            throw new CustomException(ResponseMessage.INVALID_TOKEN);
+            log.error("validateToken() >> Invalid JWT token: {}", e.getMessage());
+            return false;
         }
     }
+
+    /**
+     * 로그아웃 -> 토큰 블랙리스트 처리
+     */
+    public void logout(HttpServletRequest request) {
+        String accessToken = resolveToken(request);
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        // 1. 리프레시 토큰 삭제
+        redisTemplate.delete(email);
+
+        // 2. 액세스 토큰 블랙리스트 처리 (예: 남은 유효시간 동안만 저장)
+        Claims claims = Jwts.parserBuilder()
+                .setSigningKey(secretKey)
+                .build()
+                .parseClaimsJws(accessToken)
+                .getBody();
+
+        // 3. JWT의 남은 만료 시간 계산
+        long expiration = claims.getExpiration().getTime() - System.currentTimeMillis();
+
+        // 4. 레디스 저장
+        redisTemplate.opsForValue().set(accessToken, "logout", expiration, TimeUnit.MILLISECONDS);
+    }
+
 }

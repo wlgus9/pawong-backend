@@ -1,9 +1,7 @@
 package com.back.service;
 
 import com.back.domain.Member;
-import com.back.global.common.UserRole;
 import com.back.global.exception.CustomException;
-import com.back.global.response.ResponseMessage;
 import com.back.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,11 +12,10 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 
-import static com.back.global.response.ResponseMessage.MEMBER_IS_NOT_EXISTS;
+import static com.back.global.response.ResponseMessage.LOGIN_FAIL;
 
 @Service
 @RequiredArgsConstructor
@@ -33,7 +30,7 @@ public class CustomUserDetailsService implements UserDetailsService {
 
         return memberRepository.findByEmail(email)
                 .map(this::createUserDetails)
-                .orElseThrow(() -> new CustomException(MEMBER_IS_NOT_EXISTS));
+                .orElseThrow(() -> new CustomException(LOGIN_FAIL));
     }
 
     // DB 에 User 값이 존재한다면 UserDetails 객체로 만들어서 리턴

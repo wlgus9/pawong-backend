@@ -16,6 +16,7 @@ public class CorsConfig {
         config.addAllowedOriginPattern("*");    // 포트번호 응답 다름 허용
         config.addAllowedHeader("*");           // 헤더 값 응답 허용
         config.addAllowedMethod("*");           // 메서드 응답 허용
+        config.addExposedHeader("Authorization");
 
         source.registerCorsConfiguration("/**", config); // 모든 url에 대해 위 사항 적용
         return new CorsFilter(source);

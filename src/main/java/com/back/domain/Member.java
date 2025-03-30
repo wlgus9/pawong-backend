@@ -1,6 +1,7 @@
 package com.back.domain;
 
 import com.back.dto.member.SignupDto;
+import com.back.dto.mypage.UpdateDto;
 import com.back.global.common.UserRole;
 import com.back.global.entity.BaseEntity;
 import jakarta.persistence.*;
@@ -9,7 +10,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -40,6 +43,10 @@ public class Member extends BaseEntity {
     private String provider;        // 로그인 제공자 (GOOGLE, KAKAO, NAVER)
     private String profileImageUrl; // 프로필 이미지 URL
     private String refreshToken;    // OAuth 리프레시 토큰 (필요할 경우)
+
+    @OneToMany(mappedBy = "id", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<Pet> pets = new ArrayList<>();
+
 
     @Builder
     public Member(UUID id, String email, String password, String userName, String nickName, String birth,
@@ -89,5 +96,11 @@ public class Member extends BaseEntity {
                 .userType(signupDto.getUserType())
                 .comment(signupDto.getComment())
                 .build();
+    }
+
+    public void update(UpdateDto updateDto) {
+        this.nickName = updateDto.getNickName();
+        this.comment = updateDto.getComment();
+        this.phone = updateDto.getPhone();
     }
 }
